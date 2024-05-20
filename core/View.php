@@ -7,7 +7,7 @@ use Exception;
 class View
 {
   protected $viewPath = "../view/";
-  protected $cachePath = "../.cache/";
+  protected $cachePath = "../cache/";
 
   public function render($view, $data = [])
   {
