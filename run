@@ -1,0 +1,232 @@
+#!/usr/bin/env php
+<?php
+
+require_once __DIR__ . '/core/Migration.php';
+require_once __DIR__ . '/core/BaseMigration.php';
+require_once __DIR__ . '/core/Schema.php';
+require_once __DIR__ . '/core/Environment.php';
+require_once __DIR__ . '/core/helpers.php';
+
+use core\Migration;
+
+class CLI
+{
+  protected $migrationPath = __DIR__ . '/migrations/';
+  protected $modelPath = __DIR__ . '/app/model/';
+  protected $controllerPath = __DIR__ . '/app/controller/';
+
+  public function __construct()
+  {
+    core\Environment::load(dirname(__FILE__, 1));
+  }
+
+  public function run($argv)
+  {
+    if (count($argv) < 2) {
+      $this->printHelp();
+      return;
+    }
+
+    $command = $argv[1];
+    switch ($command) {
+      case 'migrate':
+        $this->runMigrations();
+        break;
+      case 'migrate:fresh':
+        $this->refreshMigrations();
+        break;
+      case 'make:migration':
+        if (isset($argv[2])) {
+          $create = str_replace('create_table_', '', $argv[2], $is_create);
+          str_replace('alter_table_', '', $argv[2], $is_alter);
+          str_replace('_add_', '', $argv[2], $is_alter_add);
+
+          if ($is_create) {
+            return $this->createMigration($argv[2], $create);
+          }
+
+          if ($is_alter) {
+            $table = preg_replace("/alter_table_(.+?)/s", "$1", $argv[2]);
+            if ($is_alter_add) {
+              $table = preg_replace("/alter_table_(.+?)_add_(.*)/s", "$1", $argv[2]);
+              $column = preg_replace("/alter_table_(.+?)_add_(.*)/s", "$2", $argv[2]);
+            }
+            return $this->alterMigration($argv[2], $table, $column);
+          }
+
+          $this->createMigration($argv[2]);
+        } else {
+          echo "Please provide a migration name." . PHP_EOL;
+        }
+        break;
+      case 'make:model':
+        if (isset($argv[2])) {
+          $this->createModel($argv[2]);
+        } else {
+          echo "Please provide a model name." . PHP_EOL;
+        }
+        break;
+      case 'make:controller':
+        if (isset($argv[2])) {
+          $this->createController($argv[2]);
+        } else {
+          echo "Please provide a controller name." . PHP_EOL;
+        }
+        break;
+      case 'make:database':
+        $this->createDatabase();
+        break;
+      default:
+        $this->printHelp();
+        break;
+    }
+  }
+
+  protected function printHelp()
+  {
+    echo "Usage: php run [command] [options]" . PHP_EOL;
+    echo "Commands:" . PHP_EOL;
+    echo "  migrate ------------------------------------- Run all pending migrations" . PHP_EOL;
+    echo "  migrate:fresh ------------------------------- Reset and run all migrations" . PHP_EOL;
+    echo "  make:migration  create_table_[name] --------- Create a new migration" . PHP_EOL;
+    echo "  make:migration  alter_table_[name] ---------- Alter a table" . PHP_EOL;
+    echo "  make:model      [name] ---------------------- Create a new model" . PHP_EOL;
+    echo "  make:controller [name] ---------------------- Create a new controller" . PHP_EOL;
+  }
+
+  protected function createMigration($name, $table = 'table_name')
+  {
+    $timestamp = date('YmdHis');
+    $className = ucfirst($name);
+    $filename = "{$this->migrationPath}{$timestamp}_{$name}.php";
+
+    $template = "<?php
+
+use core\BaseMigration;
+
+class {$className} extends BaseMigration
+{
+    public function up()
+    {
+        \$this->createTable('{$table}', function (\$table) {
+            \$table->id();
+        });
+    }
+
+    public function down()
+    {
+        \$this->dropTable('{$table}');
+    }
+}
+";
+    if (file_put_contents($filename, $template) !== false) {
+      echo "Migration created: {$filename}" . PHP_EOL;
+    } else {
+      echo "Error creating migration: {$filename}" . PHP_EOL;
+    }
+  }
+
+  protected function alterMigration($name, $table = 'table_name', $column = 'column')
+  {
+    $timestamp = date('YmdHis');
+    $className = ucfirst($name);
+    $filename = "{$this->migrationPath}{$timestamp}_{$name}.php";
+
+    $template = "<?php
+
+use core\BaseMigration;
+
+class {$className} extends BaseMigration
+{
+    public function up()
+    {
+        \$this->alterTable('{$table}', function (\$table) {
+            \$table->string('{$column}');
+        });
+    }
+
+    public function down()
+    {
+        \$this->alterTable('{$table}', function (\$table) {
+            \$table->dropColumn('{$column}');
+        });
+    }
+}
+";
+    if (file_put_contents($filename, $template) !== false) {
+      echo "Migration created: {$filename}" . PHP_EOL;
+    } else {
+      echo "Error creating migration: {$filename}" . PHP_EOL;
+    }
+  }
+
+  protected function createModel($name)
+  {
+    $className = ucfirst($name);
+    $filename = "{$this->modelPath}{$name}.php";
+
+    $template = "<?php
+
+namespace app\model;
+use core\Model;
+
+class {$className} extends Model
+{
+}
+";
+    if (file_put_contents($filename, $template) !== false) {
+      echo "Model created: {$filename}" . PHP_EOL;
+    } else {
+      echo "Error creating model: {$filename}" . PHP_EOL;
+    }
+  }
+
+  protected function createController($name)
+  {
+    $className = ucfirst($name) . 'Controller';
+    $filename = "{$this->controllerPath}{$className}.php";
+
+    $template = "<?php
+
+namespace app\controller;
+    
+use core\Controller;
+    
+class {$className} extends Controller
+{
+  public function index()
+  {
+  }
+}
+";
+    if (file_put_contents($filename, $template) !== false) {
+      echo "Model created: {$filename}" . PHP_EOL;
+    } else {
+      echo "Error creating model: {$filename}" . PHP_EOL;
+    }
+  }
+
+  protected function createDatabase()
+  {
+    $database = getenv('DB_DATABASE');
+    $migration = new core\BaseMigration();
+    $migration->createDatabase($database);
+    $migration->connectToDatabase();
+    echo "Database {$database} created or already exists." . PHP_EOL;
+  }
+
+  protected function runMigrations()
+  {
+    $migration = new Migration();
+    $migration->applyMigrations();
+  }
+
+  protected function refreshMigrations()
+  {
+    $migration = new Migration();
+    $migration->refresh();
+  }
+}
+
+$cli = new CLI();
+$cli->run($argv);

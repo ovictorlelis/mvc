@@ -1,0 +1,19 @@
+{
+  "name": "victor/mvc",
+  "autoload": {
+      "psr-4": {
+        "core\\": "core/",
+        "app\\": "app/"
+      },
+      "files": [
+        "core/bootstrap.php"
+    ]
+  },
+  "authors": [
+      {
+          "name": "Victor Lelis",
+          "email": "ovictorlelis@gmail.com"
+      }
+  ],
+  "require": {}
+}
