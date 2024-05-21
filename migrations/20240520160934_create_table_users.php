@@ -11,6 +11,7 @@ class Create_table_users extends BaseMigration
             $table->string('name');
             $table->string('email')->unique();
             $table->string('password');
+            $table->string('session_token')->nullable();
         });
     }
 

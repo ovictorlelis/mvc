@@ -17,23 +17,77 @@ class View
       throw new Exception('View não encontrada: ' . $viewFile);
     }
 
-    $cacheFile = $this->cachePath . str_replace('.', '/', $view) . '.php';
+    $cacheFile = $this->getCacheFilePath($viewFile);
 
     $cacheDir = dirname($cacheFile);
     if (!is_dir($cacheDir)) {
       mkdir($cacheDir, 0755, true);
     }
 
-    if (!file_exists($cacheFile) || filemtime($viewFile) > filemtime($cacheFile)) {
+    if (!file_exists($cacheFile) || $this->isCacheExpired($viewFile, $cacheFile)) {
+      $this->clearOldCache($viewFile);
+
       $content = file_get_contents($viewFile);
       $content = $this->handleExtends($content);
       $content = $this->parseDirectives($content);
+
+      $content .= "<?php error()->clear(); ?>";
+      $content .= "<?php old()->clear(); ?>";
 
       file_put_contents($cacheFile, $content);
     }
 
     extract($data);
     include $cacheFile;
+  }
+
+  protected function getCacheFilePath($viewFile)
+  {
+    $hash = md5_file($viewFile);
+    $cacheFileName = basename($viewFile, '.html') . '_' . $hash . '.php';
+    return $this->cachePath . $cacheFileName;
+  }
+
+  protected function clearOldCache($viewFile)
+  {
+    $cacheFileNamePattern = basename($viewFile, '.html') . '_*.php';
+    $cacheFiles = glob($this->cachePath . $cacheFileNamePattern);
+
+    foreach ($cacheFiles as $cacheFile) {
+      unlink($cacheFile);
+    }
+  }
+
+  protected function isCacheExpired($viewFile, $cacheFile)
+  {
+    $viewFileMTime = filemtime($viewFile);
+    $cacheFileMTime = filemtime($cacheFile);
+
+    if ($viewFileMTime > $cacheFileMTime) {
+      return true;
+    }
+
+    $content = file_get_contents($viewFile);
+    $extendsPattern = "/@extends\(\s*['\"](.+?)['\"]\s*\)/";
+    $includePattern = "/@include\(\s*['\"](.+?)['\"]\s*\)/";
+
+    if (preg_match($extendsPattern, $content, $matches)) {
+      $extendsPath = $this->viewPath . str_replace('.', '/', $matches[1]) . '.html';
+      if (!file_exists($extendsPath) || filemtime($extendsPath) > $cacheFileMTime) {
+        return true;
+      }
+    }
+
+    if (preg_match_all($includePattern, $content, $matches)) {
+      foreach ($matches[1] as $include) {
+        $includePath = $this->viewPath . str_replace('.', '/', $include) . '.html';
+        if (!file_exists($includePath) || filemtime($includePath) > $cacheFileMTime) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   protected function handleExtends($content)
@@ -85,6 +139,12 @@ class View
       '/{{\s*(.+?)\s*}}/' => '<?= $1 ?>',
       '/@php/' => '<?php',
       '/@endphp/' => '?>',
+      '/@auth/' => '<?php if(auth()->user()): ?>',
+      '/@endauth/' => '<?php endif; ?>',
+      '/@guest/' => '<?php if(!auth()->user()): ?>',
+      '/@endguest/' => '<?php endif; ?>',
+      '/@error\(\s*(.+?)\s*\)/' => '<?php if(error()->has($1)): ?>',
+      '/@enderror/' => '<?php endif; ?>',
       '/@if\(\s*(.+?)\s*\)/' => '<?php if($1): ?>',
       '/@endif/' => '<?php endif; ?>',
       '/@elseif\(\s*(.+?)\s*\)/' => '<?php elseif($1): ?>',

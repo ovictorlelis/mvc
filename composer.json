@@ -1,5 +1,5 @@
 {
-  "name": "victor/mvc",
+  "name": "ovictorlelis/mvc",
   "autoload": {
       "psr-4": {
         "core\\": "core/",

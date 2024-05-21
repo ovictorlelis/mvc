@@ -1,64 +1,32 @@
 <?php
 
-if (!function_exists('route')) {
-  /**
-   * Generate a URL for the given route.
-   *
-   * @param string $name
-   * @param array $params
-   * @return string
-   */
-  function route($name, $params = [])
-  {
-    // Simples exemplo de geração de URL
-    $url = '/' . ltrim($name, '/');
-    if (!empty($params)) {
-      $query = http_build_query($params);
-      $url .= '?' . $query;
-    }
-    return $url;
+use app\model\User;
+
+function route($name, $params = [])
+{
+  $url = '/' . ltrim($name, '/');
+  if (!empty($params)) {
+    $query = http_build_query($params);
+    $url .= '?' . $query;
   }
+  return $url;
 }
 
-if (!function_exists('active')) {
-  /**
-   * Determine if the current route matches a given pattern.
-   *
-   * @param string $pattern
-   * @return string
-   */
-  function active($pattern)
-  {
-    $currentUri = $_SERVER['REQUEST_URI'];
-    return preg_match("#^{$pattern}#", $currentUri) ? 'active' : '';
-  }
+function active($pattern, $active = 'active')
+{
+  $currentUri = $_SERVER['REQUEST_URI'];
+  return preg_match("#^{$pattern}#", $currentUri) ? $active : '';
 }
 
-if (!function_exists('url')) {
-  /**
-   * Generate a full URL for the given path.
-   *
-   * @param string $path
-   * @return string
-   */
-  function url($path)
-  {
-    $baseUrl = 'http://' . $_SERVER['HTTP_HOST'];
-    return $baseUrl . '/' . ltrim($path, '/');
-  }
+function url($path)
+{
+  $baseUrl = 'http://' . $_SERVER['HTTP_HOST'];
+  return $baseUrl . '/' . ltrim($path, '/');
 }
 
-if (!function_exists('asset')) {
-  /**
-   * Generate a URL for an asset.
-   *
-   * @param string $path
-   * @return string
-   */
-  function asset($path)
-  {
-    return url('assets/' . ltrim($path, '/'));
-  }
+function asset($path)
+{
+  return url('assets/' . ltrim($path, '/'));
 }
 
 
@@ -83,76 +51,82 @@ function validateCsrfToken($token)
   }
 }
 
-if (!function_exists('old')) {
-  /**
-   * Retrieve an old input value.
-   *
-   * @param string $key
-   * @param mixed $default
-   * @return mixed
-   */
-  function old($key, $default = null)
-  {
-    return $_SESSION['old'][$key] ?? $default;
-  }
+function redirect($url, $statusCode = 302)
+{
+  header('Location: ' . $url, true, $statusCode);
+  exit();
 }
 
-if (!function_exists('redirect')) {
-  /**
-   * Redirect to a given URL.
-   *
-   * @param string $url
-   * @param int $statusCode
-   * @return void
-   */
-  function redirect($url, $statusCode = 302)
-  {
-    header('Location: ' . $url, true, $statusCode);
-    exit();
-  }
+function back()
+{
+  $url = $_SERVER['HTTP_REFERER'] ?? '/';
+  redirect($url);
 }
 
-if (!function_exists('back')) {
-  /**
-   * Redirect to the previous URL.
-   *
-   * @return void
-   */
-  function back()
-  {
-    $url = $_SERVER['HTTP_REFERER'] ?? '/';
-    redirect($url);
-  }
+function view($view, $data = [])
+{
+  $view = new \core\View();
+  $view->render($view, $data);
 }
 
-if (!function_exists('view')) {
-  /**
-   * Render a view.
-   *
-   * @param string $view
-   * @param array $data
-   * @return void
-   */
-  function view($view, $data = [])
-  {
-    $view = new \core\View();
-    $view->render($view, $data);
-  }
+function env($key, $default = null)
+{
+  $value = getenv($key);
+  return $value === false ? $default : $value;
 }
 
-if (!function_exists('env')) {
-  /**
-   * Get an environment variable.
-   *
-   * @param string $key
-   * @param mixed $default
-   * @return mixed
-   */
-  function env($key, $default = null)
+function auth()
+{
+  return new class
   {
-    $value = getenv($key);
-    return $value === false ? $default : $value;
-  }
+    public function loginById($id)
+    {
+      $user = new User();
+      $data = $user->findOrFail($id);
+
+      $token = md5($data->password . time() . rand(1, 999));
+
+      $user->where('id', $data->id)->update(['session_token' => $token]);
+      session()->set('session_token', $token);
+    }
+
+    public function user()
+    {
+      $user = new User();
+      $token = session()->get('session_token');
+      $user = $user->where('session_token', $token)->first();
+      return $user ?? false;
+    }
+
+    public function login($email, $password)
+    {
+      $user = new User();
+      $data = $user->where('email', $email)->first();
+
+      if ($data && password_verify($password, $data->password)) {
+        $token = md5($data->password . time() . rand(1, 999));
+
+        $user->where('id', $data->id)->update(['session_token' => $token]);
+        session()->set('session_token', $token);
+        return redirect('/dashboard');
+      }
+
+      return back();
+    }
+
+    public function check()
+    {
+      if (!$this->user()) {
+        return redirect('/');
+      }
+    }
+
+    public function logout($redirect = '/')
+    {
+      session()->remove('session_token');
+      redirect($redirect);
+    }
+  };
 }
 
 function session()
@@ -202,9 +176,9 @@ function session()
   };
 }
 
-function error()
+function error($key = '')
 {
-  return new class
+  $data = new class
   {
     public function has($key)
     {
@@ -213,9 +187,22 @@ function error()
 
     public function show($key)
     {
-      return session()->show('errors')[$key][0] ?? '';
+      return session()->get('errors')[$key][0] ?? '';
+    }
+
+    public function clear()
+    {
+      if (isset($_SESSION['errors'])) {
+        unset($_SESSION['errors']);
+      }
     }
   };
+
+  if ($key) {
+    $data = $data->show($key);
+  }
+
+  return $data;
 }
 
 function old($key = '')
@@ -244,6 +231,13 @@ function old($key = '')
     {
       if (isset($_SESSION['_old'][$key])) {
         unset($_SESSION['_old'][$key]);
+      }
+    }
+
+    public function clear()
+    {
+      if (isset($_SESSION['_old'])) {
+        unset($_SESSION['_old']);
       }
     }
   };
